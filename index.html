@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN" data-tab-grove-pet-demo>
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tab Grove · 网页整理</title><link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="index.html"><span class="brand-icon">▥</span><span>Tab Grove<small>给打开的网页，一个位置</small></span></a>
+    <p class="nav-label">我的浏览空间</p>
+    <nav aria-label="标签页分类">
+      <button class="nav-item active" data-view="all"><span>▦</span>全部标签页<b id="nav-all">0</b></button>
+      <button class="nav-item" data-view="duplicates"><span>▱</span>重复网址<b id="nav-duplicates">0</b></button>
+      <button class="nav-item" data-view="pinned"><span>⚑</span>固定标签页<b id="nav-pinned">0</b></button>
+    </nav>
+    <div class="domain-label"><p class="nav-label">网站目录</p><span id="domain-count">0</span></div>
+    <div id="domain-nav" class="domain-nav"></div>
+    <div class="sidebar-bottom"><span class="local-dot"></span>只在你的浏览器中运行<button id="settings-button" aria-label="整理偏好" title="整理偏好">⚙</button></div>
+  </aside>
+  <main>
+    <header class="topbar"><span><span class="breadcrumb">浏览空间</span><span class="slash">/</span><span id="breadcrumb-title">全部标签页</span></span><div class="topbar-right"><span id="auto-badge" class="badge">● 新网页自动归组</span><span id="mode-badge" class="badge">本地扩展</span><button id="refresh" class="icon-button" aria-label="刷新标签页" title="刷新标签页">↻</button></div></header>
+    <div class="content">
+      <section class="heading"><div><div class="eyebrow">A LITTLE ORDER, A CLEARER MIND</div><h1 id="page-title">让网页，井井有条<span>。</span></h1><p id="page-subtitle">按网站聚在一起，找回你的浏览节奏。</p></div><button id="organize" class="primary"><span>▥</span>一键按域名分组</button></section>
+      <div id="demo-banner" class="demo-banner" hidden>这是界面演示，显示的是示例网页。加载 Chrome 扩展后，这里会显示你的真实标签页。<button id="install-help">如何安装 ↗</button></div>
+      <section class="stats" aria-label="浏览概况"><article><span>打开的标签页</span><strong id="stat-tabs">0</strong><small>当前查看范围内</small></article><article><span>网站域名</span><strong id="stat-domains">0</strong><small>让同站网页靠在一起</small></article><article><span>重复网址的标签页</span><strong id="stat-duplicates">0</strong><small>完整网址相同，可逐个检查</small></article><article class="stat-note"><div class="sprout">⌁</div><div><b>少一点杂乱，多一点专注。</b><p>网页留在原来的窗口，<br>思路回到眼前的事情。</p></div></article></section>
+      <section class="toolbar" aria-label="搜索和整理选项"><label class="search"><span>⌕</span><input id="search" type="search" placeholder="搜索标题或网址…" aria-label="搜索标题或网址"><kbd>/</kbd></label><div class="filters"><select id="scope" aria-label="窗口范围"><option value="current">当前窗口</option><option value="all">全部窗口</option></select><select id="sort" aria-label="排序方式"><option value="count">标签数量优先</option><option value="domain">域名 A → Z</option></select></div></section>
+      <div class="list-heading"><div><h2 id="list-title">按网站浏览</h2><span id="result-count"></span></div><button id="collapse-all" class="text-button">收起全部</button></div>
+      <div id="groups" class="groups"></div>
+      <footer><span class="local-dot"></span>网址与设置仅在本机处理<span class="footer-right">TAB GROVE / 把浏览空间还给你</span></footer>
+    </div>
+  </main>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="settings-dialog"><form method="dialog"><div class="dialog-heading"><h2>整理偏好</h2><button class="icon-button" aria-label="关闭设置">×</button></div><p>让整理方式适合你的浏览习惯。</p><div class="setting-info">按主域名识别同一网站：search.bilibili.com 和 www.bilibili.com 都显示为 BILIBILI。使用公共后缀规则识别 co.uk 等域名；独立托管站点保持独立。</div><label class="setting"><span><b>新网页自动归组</b><small>新页面打开或跳转后，加入当前窗口对应的 label；没有时自动创建。手动选择的 label 会保留。</small></span><input type="checkbox" id="auto-group"></label><label class="setting"><span><b>显示悬浮小助手</b><small>普通网页上显示可拖动的小叶。可加入已有 label、新建 label，并记住网站规则。</small></span><input type="checkbox" id="pet-enabled"></label><label class="setting"><span><b>整理后折叠标签组</b><small>自动归组时，正在浏览的网页所在组保持展开。</small></span><input type="checkbox" id="collapse-groups"></label><div class="rule-heading">已记住的网站规则</div><div id="saved-rules"></div><p id="auto-error" class="auto-error" hidden></p><div class="setting-info">固定标签页、浏览器内部页面和本地文件不会被分组。悬浮助手无法显示在 Chrome 设置页、扩展商店等受限页面。</div><button class="primary dialog-done">完成</button></form></dialog>
+  <dialog id="confirm-dialog"><form method="dialog"><h2>按网站整理标签页</h2><p id="confirm-description"></p><div class="setting-info">所选网页将加入网站对应的 label（如 X、BILIBILI，或你记住的自定义名称），可能离开已有的标签组。不会关闭网页或合并窗口。</div><div class="dialog-actions"><button class="secondary" value="cancel">取消</button><button class="primary" value="organize">开始整理</button></div></form></dialog>
+  <dialog id="help-dialog"><form method="dialog"><div class="dialog-heading"><h2>安装到 Chrome</h2><button class="icon-button" aria-label="关闭安装说明">×</button></div><ol><li>在 Chrome 地址栏输入 chrome://extensions</li><li>打开右上角「开发者模式」。</li><li>点击「加载已解压的扩展程序」，选择本项目目录。</li><li>点击工具栏中的 Tab Grove 扩展图标。</li></ol><button class="primary dialog-done">知道了</button></form></dialog>
+  <script type="module" src="app.js"></script>
+  <script src="pet.js"></script>
+</body>
+</html>

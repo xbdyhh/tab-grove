@@ -1,5 +1,7 @@
 import { defaults, domainOf, siteName, duplicateIds, groupTabs, buildPlan, colorFor } from './core.js';
 import { demoTabs } from './demo.js';
+import { scopeNames, ruleTarget, ruleEntries, matchRule, setRule } from './rules.js';
+import { labelFor } from './labels.js';
 
 const $ = id => document.getElementById(id);
 const live = !!globalThis.chrome?.tabs?.query;
@@ -7,6 +9,8 @@ const palette = { green: ['#719468', '#eef3e8'], blue: ['#668abb', '#eef2f9'], p
 let settings = { ...defaults }, tabs = [], view = 'all', chosenDomain = null, search = '', windowId = 1, ownId;
 let loading = false, refreshTimer, toastTimer, refreshGeneration = 0, saveQueue = Promise.resolve();
 let pendingIds = [], collapsed = new Set(), siteRules = {}, nativeGroups = [];
+const selected = new Set();
+let ruleTabs = [], editingRule, ruleSaving = false;
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -67,6 +71,8 @@ function theme(node, domain) {
   node.style.setProperty('--accent', accent); node.style.setProperty('--tint', tint);
 }
 function render() {
+  for (const id of selected) if (!scoped().some(t => t.id === id && !t.pinned && domainOf(t.pendingUrl || t.url))) selected.delete(id);
+  updateSelection();
   const items = scoped(), dupes = duplicateIds(items), groups = groupTabs(items, settings);
   $('stat-tabs').textContent = $('nav-all').textContent = items.length;
   $('stat-domains').textContent = groups.filter(g => g.domain !== '浏览器与本地页面').length;
@@ -129,6 +135,10 @@ function renderGroup(group, dupes) {
   });
   for (const tab of group.tabs) {
     const row = el('div', 'tab-row');
+    const checkbox = el('input', 'tab-select'); checkbox.type = 'checkbox'; checkbox.checked = selected.has(tab.id);
+    checkbox.disabled = tab.pinned || !domainOf(tab.pendingUrl || tab.url);
+    checkbox.setAttribute('aria-label', `选择网页：${tab.title || tab.url}`);
+    checkbox.onchange = () => { if (checkbox.checked) selected.add(tab.id); else selected.delete(tab.id); updateSelection(); };
     const link = el('button', 'tab-link');
     link.append(el('span', 'tab-title', tab.title || tab.url || '未命名网页'), el('span', 'tab-url', tab.pendingUrl || tab.url || '地址暂不可用'));
     link.title = `切换到：${tab.title || tab.url}`;
@@ -143,6 +153,8 @@ function renderGroup(group, dupes) {
     if (dupes.has(tab.id)) meta.append(el('span', 'tab-tag', '重复网址'));
     const assigned = nativeGroups.find(g => g.id === tab.groupId);
     if (assigned?.title) meta.append(el('span', 'tab-tag', assigned.title));
+    const matched = matchRule(tab.pendingUrl || tab.url, siteRules);
+    if (matched) { const badge = el('span', 'tab-tag rule-badge', `${scopeNames[matched.scope]} → ${matched.title}`); badge.title = `${matched.target} → ${matched.title}`; meta.append(badge); }
     if (settings.scope === 'all') meta.append(el('span', 'tab-tag', `窗口 ${[...new Set(tabs.map(t => t.windowId))].indexOf(tab.windowId) + 1}`));
     const close = el('button', 'tab-close', '×');
     close.title = `关闭：${tab.title || tab.url}`; close.setAttribute('aria-label', close.title);
@@ -150,7 +162,7 @@ function renderGroup(group, dupes) {
       if (!live) return toast('演示模式：安装扩展后可关闭真实标签页。');
       await chrome.tabs.remove(tab.id); await refresh(); toast('已关闭标签页，可在 Chrome 中按 Ctrl+Shift+T 重新打开。');
     });
-    row.append(el('span', 'tab-letter', group.domain[0].toUpperCase()), link, meta, close); details.append(row);
+    row.append(checkbox, el('span', 'tab-letter', group.domain[0].toUpperCase()), link, meta, close); details.append(row);
   }
   return details;
 }
@@ -173,7 +185,7 @@ $('confirm-dialog').addEventListener('close', () => safe(async () => {
     if (!result) throw new Error('扩展后台未响应，请刷新扩展后重试。');
     if (result.error) throw new Error(result.error);
     if (result.errors.length) toast(`已处理 ${result.count} 个标签页，但部分操作未完成：\n${result.errors.join('\n')}`, true);
-    else toast(`已将 ${result.count} 个标签页整理为 ${result.grouped} 个域名组。`);
+    else toast(`已将 ${result.count} 个标签页整理为 ${result.grouped} 个标签组。`);
   } finally { loading = false; await refresh(); }
 }));
 document.querySelectorAll('[data-view]').forEach(node => { node.onclick = () => setView(node.dataset.view); });
@@ -217,20 +229,102 @@ await safe(async () => {
 });
 
 function renderRules() {
-  $('saved-rules').replaceChildren(...Object.entries(siteRules).map(([domain, rule]) => {
-    const row = el('div', 'saved-rule');
-    const text = el('span', '', `${siteName(domain)} → ${rule.title}`); text.title = domain;
-    const remove = el('button', 'text-button', '移除'); remove.type = 'button'; remove.setAttribute('aria-label', `移除 ${siteName(domain)} 的网站规则`);
+  $('saved-rules').replaceChildren(...ruleEntries(siteRules).map(rule => {
+    const row = el('div', 'saved-rule'), copy = el('div', 'rule-copy');
+    copy.append(el('b', '', scopeNames[rule.scope]), el('span', '', rule.target), el('small', '', '→ ' + rule.title));
+    const actions = el('div', 'rule-actions');
+    const edit = el('button', 'text-button', '修改'); edit.type = 'button'; edit.setAttribute('aria-label', '修改规则：' + rule.target);
+    edit.onclick = () => { editingRule = rule; $('rule-edit-target').textContent = scopeNames[rule.scope] + ' · ' + rule.target; $('rule-edit-title').value = rule.title; $('rule-edit-error').textContent = ''; $('rule-edit-dialog').showModal(); };
+    const remove = el('button', 'text-button', '移除'); remove.type = 'button'; remove.setAttribute('aria-label', '移除规则：' + rule.target);
     remove.onclick = () => safe(async () => {
-      if (live) { const result = await chrome.runtime.sendMessage({ type: 'delete-rule', domain }); if (result?.error) throw new Error(result.error); }
-      delete siteRules[domain];
-      if (!live) { localStorage.setItem('tab-grove-demo-rules', JSON.stringify(siteRules)); window.dispatchEvent(new Event('tab-grove-demo-settings')); }
+      if (live) await managerRequest({ type: 'delete-rule', domain: rule.key });
+      delete siteRules[rule.key];
+      if (!live) persistDemoRules();
       render();
     });
-    row.append(text, remove); return row;
+    actions.append(edit, remove); row.append(copy, actions); return row;
   }));
-  if (!Object.keys(siteRules).length) $('saved-rules').append(el('p', 'rules-empty', '还没有网站规则。可以在悬浮小助手中勾选「记住这个网站」。'));
+  if (!ruleEntries(siteRules).length) $('saved-rules').append(el('p', 'rules-empty', '还没有分组规则。在网页列表勾选网页，点击「设置分组规则」，或通过悬浮小助手创建。'));
 }
+function updateSelection() {
+  $('selection-count').textContent = selected.size ? '已选 ' + selected.size + ' 个网页' : '勾选网页，设置分组规则';
+  $('assign-selected').disabled = !selected.size || loading;
+}
+function persistDemoRules() {
+  localStorage.setItem('tab-grove-demo-rules', JSON.stringify(siteRules));
+  window.dispatchEvent(new Event('tab-grove-demo-settings'));
+}
+async function managerRequest(message) {
+  const result = await chrome.runtime.sendMessage(message);
+  if (!result) throw new Error('扩展未响应，请重新加载后重试。');
+  if (result.error) throw new Error(result.error);
+  return result;
+}
+$('select-visible').onclick = () => {
+  const eligible = visible().filter(t => !t.pinned && domainOf(t.pendingUrl || t.url));
+  const all = eligible.every(t => selected.has(t.id));
+  for (const tab of eligible) { if (all) selected.delete(tab.id); else selected.add(tab.id); }
+  render();
+};
+$('view-rules').onclick = () => { renderRules(); $('settings-dialog').showModal(); $('saved-rules').scrollIntoView({ block: 'nearest' }); };
+$('assign-selected').onclick = () => {
+  ruleTabs = scoped().filter(t => selected.has(t.id)).map(t => ({ id: t.id, url: t.pendingUrl || t.url }));
+  if (!ruleTabs.length) return;
+  $('rule-selection-summary').textContent = '选中 ' + ruleTabs.length + ' 个网页；相同匹配地址只保存一条规则。';
+  $('label-suggestions').replaceChildren(...[...new Set([...nativeGroups.map(g => g.title), ...ruleEntries(siteRules).map(r => r.title)])].filter(Boolean).map(title => { const option = el('option'); option.value = title; return option; }));
+  $('rule-title').value = ''; $('rule-save-error').textContent = ''; previewRules(); $('rule-dialog').showModal();
+};
+function previewRules() {
+  const draft = { ...siteRules }, title = $('rule-title').value.trim();
+  if (title) for (const tab of ruleTabs) setRule(draft, tab.url, $('rule-scope').value, { title, color: $('rule-color').value });
+  const seen = new Set();
+  $('rule-preview').replaceChildren(...ruleTabs.map(tab => {
+    const target = ruleTarget(tab.url, $('rule-scope').value);
+    const effective = matchRule(tab.url, draft);
+    const note = effective && effective.key !== target.key ? ' · 更具体规则生效 → ' + effective.title : '';
+    const text = target.target + (siteRules[target.key] ? ' · 覆盖已有规则' : '') + note;
+    if (seen.has(text)) return null; seen.add(text);
+    return el('p', '', text);
+  }).filter(Boolean));
+}
+$('rule-scope').onchange = previewRules; $('rule-title').oninput = previewRules;
+$('rule-cancel').onclick = () => $('rule-dialog').close();
+$('rule-form').onsubmit = async event => {
+  event.preventDefault(); if (ruleSaving) return;
+  ruleSaving = true; $('rule-save').disabled = true; $('rule-save-error').textContent = '';
+  try {
+    const message = { type: 'save-rules', tabs: ruleTabs, ruleScope: $('rule-scope').value, title: $('rule-title').value.trim(), color: $('rule-color').value };
+    let result;
+    if (live) result = await managerRequest(message);
+    else {
+      const keys = new Set();
+      for (const tab of ruleTabs) keys.add(setRule(siteRules, tab.url, message.ruleScope, message).key);
+      for (const chosen of ruleTabs) {
+        const tab = tabs.find(t => t.id === chosen.id), label = labelFor(chosen.url, siteRules);
+        let group = nativeGroups.find(g => g.title === label.title && g.windowId === tab.windowId);
+        if (!group) { group = { id: Math.max(0, ...nativeGroups.map(g => g.id)) + 1, windowId: tab.windowId, title: label.title, color: label.color }; nativeGroups.push(group); }
+        tab.groupId = group.id;
+      }
+      persistDemoRules(); result = { saved: keys.size, count: ruleTabs.length, errors: [] };
+    }
+    selected.clear(); $('rule-dialog').close(); await refresh();
+    toast('已保存 ' + result.saved + ' 条规则，按优先级整理 ' + result.count + ' 个网页。' + (result.errors.length ? '\n部分网页未完成：' + result.errors.join('\n') : ''), !!result.errors.length);
+  } catch (error) { $('rule-save-error').textContent = error.message; }
+  finally { ruleSaving = false; $('rule-save').disabled = false; }
+};
+$('rule-edit-cancel').onclick = () => $('rule-edit-dialog').close();
+$('rule-edit-form').onsubmit = async event => {
+  event.preventDefault(); $('rule-edit-save').disabled = true;
+  try {
+    const title = $('rule-edit-title').value.trim();
+    if (!title) throw new Error('请输入 label 名称。');
+    if (live) await managerRequest({ type: 'update-rule', key: editingRule.key, title, color: editingRule.color });
+    siteRules[editingRule.key] = { title, color: editingRule.color };
+    if (!live) persistDemoRules();
+    $('rule-edit-dialog').close(); render(); toast('规则已修改，新页面按新规则归组。已有网页可一键整理。');
+  } catch (error) { $('rule-edit-error').textContent = error.message; }
+  finally { $('rule-edit-save').disabled = false; }
+};
 function showAutoError(error) {
   $('auto-error').hidden = !error;
   $('auto-error').textContent = error ? `最近一次自动归组未完成（${new Date(error.time).toLocaleTimeString()}）：${error.message}。可手动整理，或等待网页下一次加载时重试。` : '';

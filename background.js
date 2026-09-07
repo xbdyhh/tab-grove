@@ -2,6 +2,7 @@ import { defaults, domainOf, siteName } from './core.js';
 import { organize } from './organizer.js';
 import { assignLabel, autoGroupTab, labelFor } from './labels.js';
 import { openManager, popupContext } from './navigation.js';
+import { matchRule, ruleTarget, setRule, ruleEntries } from './rules.js';
 
 // Auto events, bulk operations and pet clicks share one mutation queue.
 let queue = Promise.resolve();
@@ -33,7 +34,8 @@ async function petContext(sender) {
   const { settings, rules } = await config();
   const domain = domainOf(tab.pendingUrl || tab.url);
   const groups = await chrome.tabGroups.query({ windowId: tab.windowId });
-  return { domain, siteName: siteName(domain), pinned: tab.pinned, groupId: tab.groupId, groups: groups.map(({ id, title, color }) => ({ id, title, color })), suggested: domain ? labelFor(domain, rules).title : '', rule: rules[domain] || null, autoGroup: settings.autoGroup };
+  const url = tab.pendingUrl || tab.url;
+  return { url, domain, siteName: siteName(domain), pinned: tab.pinned, groupId: tab.groupId, groups: groups.map(({ id, title, color }) => ({ id, title, color })), suggested: domain ? labelFor(url, rules).title : '', rule: matchRule(url, rules), targets: domain ? Object.fromEntries(['domain', 'host', 'page'].map(scope => [scope, ruleTarget(url, scope).target])) : {}, autoGroup: settings.autoGroup };
 }
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (sender.id !== chrome.runtime.id) return;
@@ -65,6 +67,26 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       return result;
     }
     if (message.type === 'pet-open-manager' && fromPet) { await openManager(chrome, sender.tab.windowId); return { ok: true }; }
+    if (message.type === 'save-rules' && fromManager) {
+      if (!Array.isArray(message.tabs) || !message.tabs.length || !message.tabs.every(t => Number.isInteger(t.id) && typeof t.url === 'string')) throw new Error('请选择要设置规则的网页。');
+      const { settings, rules } = await config(), keys = new Set(), ids = [];
+      for (const selected of message.tabs) {
+        const tab = await chrome.tabs.get(selected.id), url = tab.pendingUrl || tab.url;
+        if (tab.pinned || !domainOf(url) || (await chrome.windows.get(tab.windowId)).type !== 'normal' || new URL(url).href !== new URL(selected.url).href) throw new Error('选中的网页已跳转、固定或关闭，请刷新列表后重试。');
+        keys.add(setRule(rules, url, message.ruleScope, { title: message.title, color: message.color }).key);
+        ids.push(tab.id);
+      }
+      await chrome.storage.local.set({ siteRules: rules });
+      const result = await organize(chrome, ids, settings, rules);
+      return { ...result, saved: keys.size };
+    }
+    if (message.type === 'update-rule' && fromManager) {
+      const { rules } = await config();
+      const existing = ruleEntries(rules).find(r => r.key === message.key);
+      if (!existing) throw new Error('规则已不存在，请刷新后重试。');
+      setRule(rules, existing.scope === 'page' ? existing.target : `https://${existing.target}`, existing.scope, { title: message.title, color: message.color });
+      await chrome.storage.local.set({ siteRules: rules }); return { ok: true };
+    }
     if (message.type === 'delete-rule' && fromManager && typeof message.domain === 'string') {
       const { rules } = await config(); delete rules[message.domain]; await chrome.storage.local.set({ siteRules: rules }); return { ok: true };
     }

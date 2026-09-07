@@ -48,6 +48,39 @@ test('same display name on different domains never merges', async () => {
   assert.equal(f.groups.length, 2); assert.ok(f.groups.every(g => g.title === 'EXAMPLE'));
   assert.notEqual(f.tabs[0].groupId, f.tabs[1].groupId);
 });
+
+for (const remember of [false, true]) test(`adding APIDANCE to X preserves the destination for new X tabs (remember=${remember})`, async () => {
+  const f = fixture([{ id: 1, url: 'https://x.com/home' }, { id: 2, url: 'https://alphapro.apidance.pro/commonfollow' }, { id: 3, url: 'https://x.com/explore' }]);
+  const rules = {}, state = {};
+  await autoGroupTab(f.api, 1, defaults, rules, state);
+  const originalGroupId = f.tabs[0].groupId;
+  await assignLabel(f.api, 2, { mode: 'existing', groupId: originalGroupId, remember }, defaults, rules, state);
+  // Restoring session data must not lose a mixed group's website identity.
+  const restoredState = JSON.parse(JSON.stringify(state));
+  await autoGroupTab(f.api, 3, defaults, rules, restoredState);
+  await autoGroupTab(f.api, 1, defaults, rules, restoredState);
+  await autoGroupTab(f.api, 2, defaults, rules, restoredState);
+  assert.equal(f.groups.length, 1);
+  assert.ok(f.tabs.every(tab => tab.groupId === originalGroupId));
+  assert.equal(f.groups[0].title, 'X');
+  assert.equal(restoredState[2].manual, !remember);
+});
+
+test('mixed groups do not attract unrelated websites with the same display name', async () => {
+  const f = fixture([{ id: 1, url: 'https://example.net', groupId: 8 }, { id: 2, url: 'https://x.com', groupId: 8 }, { id: 3, url: 'https://example.com' }], [{ id: 8, title: 'EXAMPLE' }]);
+  await autoGroupTab(f.api, 3, defaults);
+  assert.equal(f.groups.length, 2);
+  assert.notEqual(f.tabs[2].groupId, 8);
+});
+
+test('bulk organizing reuses a mixed site group and keeps its manually added members', async () => {
+  const f = fixture([{ id: 1, url: 'https://x.com/home', groupId: 8 }, { id: 2, url: 'https://apidance.pro', groupId: 8 }, { id: 3, url: 'https://x.com/explore' }], [{ id: 8, title: 'X' }]);
+  const result = await organize(f.api, [1, 3], defaults);
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.grouped, 1);
+  assert.equal(f.groups.length, 1);
+  assert.ok(f.tabs.every(tab => tab.groupId === 8));
+});
 test('legacy domain titles are reused and renamed to short website names', async () => {
   const f = fixture([{ id: 1, url: 'https://search.bilibili.com', groupId: 8 }, { id: 2, url: 'https://bilibili.com' }], [{ id: 8, title: 'search.bilibili.com' }]);
   await autoGroupTab(f.api, 2, defaults);
@@ -141,7 +174,7 @@ test('background serializes simultaneous new-tab events and routes pet requests 
     assert.equal(context.groups[0].title, 'BILIBILI');
     const result = await send({ type: 'pet-assign', mode: 'create', title: '视频', remember: true, color: 'pink', tabId: 1 });
     assert.equal(result.title, '视频'); assert.notEqual(f.tabs[0].groupId, f.tabs[1].groupId);
-    assert.equal(local.siteRules['bilibili.com'].title, '视频'); assert.equal(session.assignments[2].manual, true);
+    assert.equal(local.siteRules['bilibili.com'].title, '视频'); assert.equal(session.assignments[2].manual, false);
     const popupSender = { id: 'unit-test', url: 'chrome-extension://unit-test/popup.html' };
     const popupSend = message => new Promise(resolve => f.api.runtime.onMessage.listeners[0](message, popupSender, resolve));
     const bulkContext = await popupSend({ type: 'popup-context', windowId: 1 });
@@ -150,8 +183,80 @@ test('background serializes simultaneous new-tab events and routes pet requests 
     assert.deepEqual(organized.errors, []); assert.equal(organized.count, 2);
     assert.equal(f.tabs[0].groupId, f.tabs[1].groupId);
     assert.equal(f.groups.find(g => g.id === f.tabs[0].groupId).title, '视频');
+    const selectedTabs = f.tabs.map(tab => ({ id: tab.id, url: tab.url }));
+    const savedHosts = await popupSend({ type: 'save-rules', tabs: selectedTabs, ruleScope: 'host', title: '接口', color: 'blue' });
+    assert.equal(savedHosts.saved, 2); assert.equal(savedHosts.count, 2);
+    assert.equal(local.siteRules['host:search.bilibili.com'].title, '接口');
+    const savedPage = await popupSend({ type: 'save-rules', tabs: [selectedTabs[1]], ruleScope: 'page', title: '收藏', color: 'pink' });
+    assert.equal(savedPage.saved, 1);
+    await popupSend({ type: 'save-rules', tabs: selectedTabs, ruleScope: 'domain', title: '通用', color: 'green' });
+    assert.equal(f.groups.find(g => g.id === f.tabs[0].groupId).title, '接口');
+    assert.equal(f.groups.find(g => g.id === f.tabs[1].groupId).title, '收藏');
+    const rulesBeforeRace = structuredClone(local.siteRules);
+    const stale = await popupSend({ type: 'save-rules', tabs: [selectedTabs[0], { id: 2, url: 'https://search.bilibili.com/old' }], ruleScope: 'domain', title: '不应保存' });
+    assert.ok(stale.error); assert.deepEqual(local.siteRules, rulesBeforeRace);
+    await popupSend({ type: 'update-rule', key: 'host:www.bilibili.com', title: '新接口', color: 'blue' });
+    assert.equal(local.siteRules['host:www.bilibili.com'].title, '新接口');
+    await popupSend({ type: 'delete-rule', domain: 'page:https://search.bilibili.com/' });
+    assert.equal(local.siteRules['page:https://search.bilibili.com/'], undefined);
+    await popupSend({ type: 'organize', ids: [1, 2] });
+    assert.equal(f.groups.find(g => g.id === f.tabs[0].groupId).title, '新接口');
+    assert.equal(f.groups.find(g => g.id === f.tabs[1].groupId).title, '接口');
     let answered = false;
     f.api.runtime.onMessage.listeners[0]({ type: 'pet-assign' }, { ...sender, id: 'foreign-extension' }, () => { answered = true; });
     assert.equal(answered, false);
   } finally { globalThis.chrome = previousChrome; }
+});
+
+
+test('navigation within one root follows host and page rules even after manual assignment', async () => {
+  const f = fixture([{ id: 1, url: 'https://x.com/home' }]), rules = {}, state = {};
+  await assignLabel(f.api, 1, { mode: 'create', title: '社交', remember: true, ruleScope: 'domain' }, defaults, rules, state);
+  rules['host:api.x.com'] = { title: '接口', color: 'blue' };
+  rules['page:https://api.x.com/saved'] = { title: '收藏', color: 'pink' };
+  for (const [url, title] of [['https://api.x.com/search', '接口'], ['https://api.x.com/saved', '收藏'], ['https://x.com/home', '社交']]) {
+    f.tabs[0].url = url; await autoGroupTab(f.api, 1, defaults, rules, state);
+    assert.equal(f.groups.find(g => g.id === f.tabs[0].groupId).title, title);
+  }
+});
+
+test('saving a less specific rule preserves the more specific winning destination', async () => {
+  const f = fixture([{ id: 1, url: 'https://api.x.com/saved' }]);
+  const rules = { 'page:https://api.x.com/saved': { title: '收藏' } };
+  const result = await assignLabel(f.api, 1, { mode: 'create', title: '社交', remember: true, ruleScope: 'domain' }, defaults, rules, {});
+  assert.equal(rules['x.com'].title, '社交');
+  assert.equal(result.title, '收藏'); assert.equal(result.overridden, true);
+  assert.equal(f.groups.length, 1);
+});
+
+test('exact page saves reject same-domain navigation since the pet context was read', async () => {
+  const f = fixture([{ id: 1, url: 'https://x.com/changed' }]), rules = {};
+  await assert.rejects(() => assignLabel(f.api, 1, { mode: 'create', title: '收藏', remember: true, ruleScope: 'page', expectedUrl: 'https://x.com/original' }, defaults, rules, {}));
+  assert.deepEqual(rules, {}); assert.equal(f.joins.length, 0);
+});
+
+test('bulk organization splits a root by winning rules and shares labels across roots', async () => {
+  const f = fixture([{ id: 1, url: 'https://x.com/home' }, { id: 2, url: 'https://api-dance.com/home' }, { id: 3, url: 'https://api.x.com/search' }, { id: 4, url: 'https://search.api-dance.com/search' }, { id: 5, url: 'https://x.com/1234/lalala' }, { id: 6, url: 'https://x.com/home', windowId: 2 }]);
+  const rules = { 'x.com': { title: '社交' }, 'api-dance.com': { title: '社交' }, 'host:api.x.com': { title: '接口' }, 'host:search.api-dance.com': { title: '接口' }, 'page:https://x.com/1234/lalala': { title: '收藏' } };
+  const result = await organize(f.api, f.tabs.map(t => t.id), defaults, rules);
+  assert.deepEqual(result.errors, []); assert.equal(result.count, 6); assert.equal(result.grouped, 4);
+  assert.equal(f.tabs[0].groupId, f.tabs[1].groupId); assert.equal(f.tabs[2].groupId, f.tabs[3].groupId);
+  assert.notEqual(f.tabs[0].groupId, f.tabs[2].groupId); assert.notEqual(f.tabs[0].groupId, f.tabs[5].groupId);
+  assert.equal(f.groups.find(g => g.id === f.tabs[4].groupId).title, '收藏');
+});
+
+
+test('a same-root navigation during automatic grouping cannot use the previous page rule', async () => {
+  const f = fixture([{ id: 1, url: 'https://x.com/saved' }]);
+  const get = f.api.tabs.get; let reads = 0;
+  f.api.tabs.get = async id => { if (++reads === 2) f.tabs[0].url = 'https://x.com/other'; return get(id); };
+  const result = await autoGroupTab(f.api, 1, defaults, { 'page:https://x.com/saved': { title: '收藏' } });
+  assert.equal(result.skipped, true); assert.equal(f.joins.length, 0);
+});
+
+test('bulk grouping rechecks URL rules after moving tabs', async () => {
+  const f = fixture([{ id: 1, url: 'https://x.com/saved' }]);
+  f.api.tabs.move = async () => { f.tabs[0].url = 'https://x.com/other'; };
+  const result = await organize(f.api, [1], defaults, { 'page:https://x.com/saved': { title: '收藏' } });
+  assert.equal(result.count, 0); assert.equal(f.joins.length, 0);
 });

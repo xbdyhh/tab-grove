@@ -1,8 +1,8 @@
 (() => {
   const live = !!globalThis.chrome?.runtime?.id;
   const demo = !live && document.documentElement.hasAttribute('data-tab-grove-pet-demo');
-  if ((!live && !demo) || (live && !/^https?:$/.test(location.protocol)) || window.top !== window || globalThis.__tabGrovePetVersion === '1.2.2') return;
-  globalThis.__tabGrovePetVersion = '1.2.2';
+  if ((!live && !demo) || (live && !/^https?:$/.test(location.protocol)) || window.top !== window || globalThis.__tabGrovePetVersion === '1.3.0') return;
+  globalThis.__tabGrovePetVersion = '1.3.0';
   const host = document.createElement('div');
   host.id = 'tab-grove-pet';
   document.getElementById(host.id)?.remove();
@@ -19,7 +19,7 @@
       .intro{margin:7px 0 15px;color:#8b9883;font-size:11px}
       .divider{display:flex;align-items:center;gap:10px;font-size:10px;color:#99a18e;margin:17px 0 11px}.divider:after{content:"";height:1px;background:#e4eadc;flex:1}
       .row{display:flex;gap:7px}select,input[type=text]{min-width:0;background:white;border:1px solid #dae3d3;border-radius:7px;color:#45613f;padding:9px 10px;width:100%;outline:none;font-size:12px}.row select,.row input{flex:1}.secondary{background:#38694b;color:#fff;border:1px solid #38694b;border-radius:7px;padding:8px 12px;white-space:nowrap;font-size:11px}.secondary:hover{background:#2d583e;border-color:#2d583e}
-      label.remember{display:flex;align-items:flex-start;gap:6px;color:#86937d;margin-top:13px;font-size:10px;cursor:pointer}input[type=checkbox]{accent-color:#4f7943;margin:2px 0 0;width:13px;height:13px;flex-shrink:0}.colors{display:flex;gap:8px;margin-top:9px}.color{width:19px;height:19px;border:3px solid white;outline:1px solid #e5eadf;background:var(--color);border-radius:50%;padding:0}.color[aria-pressed=true]{outline:2px solid #678358}
+      .scope-label{display:block;font-size:11px;color:#607c50;margin-bottom:6px}.rule-target{font-size:11px;overflow-wrap:anywhere;background:#f0f4eb;padding:7px;border-radius:6px;max-height:58px;overflow:auto;margin:7px 0}.match-info{font-size:10px;color:#74866a;line-height:1.7;margin:7px 0}.colors{display:flex;gap:8px;margin-top:9px}.color{width:19px;height:19px;border:3px solid white;outline:1px solid #e5eadf;background:var(--color);border-radius:50%;padding:0}.color[aria-pressed=true]{outline:2px solid #678358}
       .status{font-size:11px;color:#607c50;line-height:1.7;white-space:pre-line;overflow-wrap:anywhere;margin:12px 0 0}.status.error{color:#ab594e}.foot{display:flex;align-items:center;justify-content:space-between;margin-top:15px;padding-top:12px;border-top:1px solid #e5eadf}.link{background:none;border:0;padding:0;color:#839476;font-size:10px}.link:hover{color:#315b38}.demo{font-size:10px;color:#a38b5c;margin:8px 0 0}
       button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #8ca781;outline-offset:3px}
     </style>
@@ -28,12 +28,12 @@
     </button>
     <section class="panel" id="panel" hidden role="dialog" aria-label="小叶网页整理助手">
       <div class="head"><strong>小叶</strong><span>TAB GROVE</span><button class="close" id="close" aria-label="收起小助手">×</button></div>
-      <p class="intro">把眼前的网页，放进喜欢的 label。</p>
+      <p class="intro">选择规则范围，再加入或创建 label。</p><label class="scope-label" for="rule-scope">将分组规则用于</label><select id="rule-scope" aria-label="规则范围"><option value="domain">2 · 根域名（包含所有子域名）</option><option value="host">3 · 域名前缀（完整主机名）</option><option value="page">4 · 具体网页（完整网址）</option></select><p class="rule-target" id="rule-target"></p><p class="match-info" id="match-info"></p>
       <div class="divider">选择已有 label</div>
       <div class="row"><select id="labels" aria-label="当前窗口的 label"></select><button class="secondary" id="join">加入</button></div>
       <div class="divider">或者，新建一个</div>
       <form id="create-form"><div class="row"><input id="new-label" type="text" maxlength="60" placeholder="例如：工作、灵感、稍后看" aria-label="新 label 名称" required><button class="secondary" id="create" type="submit">创建</button></div><div class="colors" id="colors" aria-label="label 颜色"></div></form>
-      <label class="remember"><input id="remember" type="checkbox"><span>记住这个网站，以后新页面也加入所选 label</span></label>
+      <p class="match-info">加入或创建时保存规则。具体网页 ＞ 域名前缀 ＞ 根域名 ＞ 默认归组。</p>
       <p class="status" id="status" role="status"></p><p class="demo" id="demo-note" hidden>界面演示 · 以下操作仅修改示例标签组</p>
       <div class="foot"><button class="link" id="manager">打开整理面板 ↗</button><button class="link" id="hide">本页暂时隐藏</button></div>
     </section>`;
@@ -52,15 +52,21 @@
       if (result.error) throw new Error(result.error);
       return result;
     }
+    const { ruleTarget, matchRule, setRule } = await import('./rules.js');
     const rules = JSON.parse(localStorage.getItem('tab-grove-demo-rules') || '{}');
-    if (message.type === 'pet-context') return { domain: 'bilibili.com', siteName: 'BILIBILI', groups: demoGroups, groupId: demoGroupId, suggested: rules['bilibili.com']?.title || 'BILIBILI', rule: rules['bilibili.com'], autoGroup: JSON.parse(localStorage.getItem('tab-grove-settings') || '{}').autoGroup !== false };
+    const url = 'https://search.bilibili.com/all?keyword=摄影';
+    if (message.type === 'pet-context') return { url, domain: 'bilibili.com', siteName: 'BILIBILI', groups: demoGroups, groupId: demoGroupId, rule: matchRule(url, rules), targets: Object.fromEntries(['domain', 'host', 'page'].map(scope => [scope, ruleTarget(url, scope).target])), autoGroup: JSON.parse(localStorage.getItem('tab-grove-settings') || '{}').autoGroup !== false };
     if (message.type === 'pet-open-manager') return { ok: true };
-    let group = message.mode === 'existing' ? demoGroups.find(g => g.id === message.groupId) : demoGroups.find(g => g.title === (message.mode === 'domain' ? rules['bilibili.com']?.title || 'BILIBILI' : message.title.trim()));
-    if (!group) { group = { id: Math.max(...demoGroups.map(g => g.id)) + 1, title: message.mode === 'domain' ? rules['bilibili.com']?.title || 'BILIBILI' : message.title.trim(), color: message.color || 'green' }; demoGroups.push(group); }
+    const desired = message.mode === 'existing' ? demoGroups.find(g => g.id === message.groupId) : { title: message.title.trim(), color: message.color };
+    if (!desired) throw new Error('请选择 label。');
+    const savedRule = setRule(rules, url, message.ruleScope, desired), effective = matchRule(url, rules);
+    let group = demoGroups.find(g => g.title === effective.title);
+    if (!group) { group = { id: Math.max(0, ...demoGroups.map(g => g.id)) + 1, title: effective.title, color: effective.color }; demoGroups.push(group); }
     demoGroupId = group.id;
-    if (message.remember && message.mode !== 'domain') { rules['bilibili.com'] = { title: group.title, color: group.color }; localStorage.setItem('tab-grove-demo-rules', JSON.stringify(rules)); window.dispatchEvent(new Event('tab-grove-demo-settings')); }
-    return { title: group.title, remembered: message.remember && message.mode !== 'domain' };
+    localStorage.setItem('tab-grove-demo-rules', JSON.stringify(rules)); window.dispatchEvent(new Event('tab-grove-demo-settings'));
+    return { title: group.title, savedTitle: desired.title, remembered: true, overridden: effective.key !== savedRule.key };
   }
+
   function status(text, error = false) { $('status').textContent = text; $('status').classList.toggle('error', error); }
   function layout() {
     const width = document.documentElement.clientWidth, height = innerHeight;
@@ -74,7 +80,7 @@
   }
   function setBusy(value) {
     busy = value;
-    for (const id of ['join', 'create', 'labels', 'new-label', 'remember']) $(id).disabled = value || !!context?.pinned;
+    for (const id of ['join', 'create', 'labels', 'new-label', 'rule-scope']) $(id).disabled = value || !!context?.pinned;
     if (!value && !context?.groups.length) { $('join').disabled = true; $('labels').disabled = true; }
   }
   async function refresh() {
@@ -86,9 +92,13 @@
     if (!context.groups.length) { const option = document.createElement('option'); option.textContent = '还没有 label，请在下方创建'; $('labels').append(option); }
     setBusy(busy);
     if (context.pinned) status('这是固定标签页，请先取消固定，再加入 label。');
-    else if (context.rule) status(`已记住：此网站 → ${context.rule.title}${context.autoGroup ? '' : '（自动归组已关闭）'}`);
+    $('match-info').textContent = context.rule ? `当前生效：${scopeNames[context.rule.scope]} → ${context.rule.title}` : '当前生效：1 · 默认按根域名分组';
+    updateTarget();
     layout();
   }
+  const scopeNames = { domain: '2 · 根域名', host: '3 · 域名前缀', page: '4 · 具体网页' };
+  function updateTarget() { $('rule-target').textContent = context?.targets?.[$('rule-scope').value] || '正在读取…'; layout(); }
+  $('rule-scope').onchange = updateTarget;
   function close() { $('panel').hidden = true; $('pet-button').setAttribute('aria-expanded', 'false'); }
   $('pet-button').onclick = async () => {
     if (dragged) { dragged = false; return; }
@@ -106,8 +116,9 @@
     if (mode === 'create' && !title) { status('给新的 label 起个名字吧。', true); $('new-label').focus(); return; }
     setBusy(true); status('正在加入…');
     try {
-      const result = await request({ type: 'pet-assign', mode, title, color, groupId: Number($('labels').value), remember: $('remember').checked, expectedDomain: context.domain });
-      await refresh(); status(`已加入 ${result.title}${result.remembered ? '，并记住此网站的归组规则。' : '。'}`);
+      const result = await request({ type: 'pet-assign', mode, title, color, groupId: Number($('labels').value), remember: true, ruleScope: $('rule-scope').value, expectedUrl: context.url });
+      await refresh(); $('labels').value = context.groupId;
+      status(result.overridden ? `规则已保存 → ${result.savedTitle}。当前网页命中更高优先级规则，加入 ${result.title}。` : `规则已保存，已加入 ${result.title}。`);
       if (mode === 'create') $('new-label').value = '';
     } catch (error) { status(error.message, true); }
     finally { setBusy(false); layout(); }

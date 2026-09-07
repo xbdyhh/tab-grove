@@ -1,5 +1,5 @@
 import { getDomain, getDomainWithoutSuffix } from './vendor/tldts.js';
-export const defaults = { scope: 'current', sort: 'count', collapse: false, autoGroup: true, petEnabled: true };
+export const defaults = { scope: 'current', sort: 'count', collapse: false, autoGroup: true };
 
 export function domainOf(raw) {
   try {

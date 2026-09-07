@@ -7,11 +7,24 @@
 <body>
   <header><div class="brand-icon" aria-hidden="true"><img src="icons/cat.svg" alt=""></div><div><h1>Tab Grove</h1><p>给网页一个位置，让思路更清晰。</p></div><span class="local">本机</span></header>
   <div class="demo" id="demo" hidden>弹窗界面演示 · 显示示例数据</div>
+  <nav class="popup-tabs" aria-label="整理方式"><button id="show-current" aria-pressed="true">当前网页</button><button id="show-bulk" aria-pressed="false">一键整理</button></nav>
   <main>
+    <section id="current-panel" aria-label="当前网页规则">
+      <h2 id="page-title">正在读取当前网页…</h2><p class="page-url" id="page-url"></p><p class="hint" id="page-unavailable" hidden></p>
+      <div id="page-controls">
+        <label class="field-label" for="rule-scope">将分组规则用于</label><select id="rule-scope"><option value="domain">2 · 根域名（包含所有子域名）</option><option value="host">3 · 域名前缀（完整主机名）</option><option value="page">4 · 具体网页（完整网址）</option></select>
+        <p class="rule-target" id="rule-target"></p><p class="match-info" id="match-info"></p>
+        <label class="field-label" for="labels">加入已有 label</label><div class="label-row"><select id="labels"></select><button class="primary" id="join" disabled>加入</button></div>
+        <form id="create-form"><label class="field-label" for="new-label">或者，新建一个</label><div class="label-row"><input id="new-label" type="text" maxlength="60" required placeholder="工作、灵感、稍后看"><button class="primary" id="create" type="submit" disabled>创建</button></div><div class="colors" id="colors" aria-label="新 label 颜色"></div></form>
+        <p class="hint">加入或创建时保存规则。具体网页 ＞ 域名前缀 ＞ 根域名 ＞ 默认归组。</p>
+      </div>
+    </section>
+    <section id="bulk-panel" aria-label="批量整理" hidden>
     <div class="section-title"><label for="scope">整理范围</label><select id="scope" disabled><option value="current">当前窗口</option><option value="all">全部窗口</option></select></div>
     <section class="stats" aria-label="整理范围概况"><div><strong id="tab-count">—</strong><span>标签页</span></div><div><strong id="site-count">—</strong><span>网站</span></div><div><strong id="duplicate-count">—</strong><span>重复网址页</span></div></section>
     <section class="current" aria-label="一键整理"><div class="current-heading"><span class="site-icon" aria-hidden="true">▥</span><div><h2>一键整理所有网页</h2><p id="organize-summary">正在读取标签页…</p></div></div><p class="hint">与完整管理页使用相同优先级：具体网页 ＞ 域名前缀 ＞ 根域名 ＞ 默认归组。</p><button class="primary" id="organize" disabled>一键按域名分组</button><p class="hint">跳过固定标签页和内部页面，窗口保持独立。</p><div id="confirmation" hidden><p id="confirm-description"></p><p class="hint">所选网页可能离开原有标签组；不会关闭网页。</p><div class="confirm-actions"><button id="cancel-organize" class="secondary">取消</button><button id="confirm-organize" class="primary">开始整理</button></div></div></section>
-    <section class="preferences" aria-label="快捷开关"><label><span><b>新网页自动归组</b><small>打开网页，自动放进对应 label</small></span><input id="auto-group" type="checkbox" role="switch" disabled></label><label><span><b>显示悬浮小助手</b><small>随时整理当前网页，或新建 label</small></span><input id="pet-enabled" type="checkbox" role="switch" disabled></label></section>
+    <section class="preferences" aria-label="快捷开关"><label><span><b>新网页自动归组</b><small>打开网页，自动放进对应 label</small></span><input id="auto-group" type="checkbox" role="switch" disabled></label></section>
+    </section>
     <p class="status" id="status" role="status" hidden></p>
   </main>
   <footer><button id="open-manager" class="manager" disabled><span><b>打开完整管理页面</b><small>浏览全部标签页 · 网站规则 · 精细设置</small></span><span aria-hidden="true">↗</span></button></footer>

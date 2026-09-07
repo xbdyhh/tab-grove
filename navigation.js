@@ -1,4 +1,13 @@
 import { domainOf, duplicateIds, buildPlan, defaults } from './core.js';
+import { matchRule, ruleTarget } from './rules.js';
+
+export function describePage(tab, groups = [], rules = {}) {
+  const url = tab?.pendingUrl || tab?.url, domain = domainOf(url);
+  return { tabId: tab?.id, url, title: tab?.title || url || '没有当前网页', domain,
+    pinned: !!tab?.pinned, supported: !!domain && !tab?.pinned, groupId: tab?.groupId,
+    groups: groups.map(({ id, title, color }) => ({ id, title, color })), rule: matchRule(url, rules),
+    targets: domain ? Object.fromEntries(['domain', 'host', 'page'].map(scope => [scope, ruleTarget(url, scope).target])) : {} };
+}
 
 export async function openManager(api, windowId) {
   if (!Number.isInteger(windowId)) throw new Error('无法确定当前窗口，请重新打开扩展。');
@@ -22,9 +31,11 @@ export function summarizePopup(tabs, windowId, settings = defaults) {
   };
 }
 
-export async function popupContext(api, windowId, settings = defaults) {
+export async function popupContext(api, windowId, settings = defaults, rules = {}) {
   if (!Number.isInteger(windowId)) throw new Error('无法确定当前窗口。');
   const allTabs = await api.tabs.query(settings.scope === 'all' ? { windowType: 'normal' } : { windowId });
   const tabs = allTabs.filter(t => !t.url?.startsWith(api.runtime.getURL('')));
-  return summarizePopup(tabs, windowId, settings);
+  const [active] = await api.tabs.query({ windowId, active: true });
+  const groups = await api.tabGroups.query({ windowId });
+  return { ...summarizePopup(tabs, windowId, settings), page: describePage(active, groups, rules) };
 }

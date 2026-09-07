@@ -58,7 +58,7 @@ export async function assignLabel(api, tabId, request, settings, rules, state) {
   const tab = await api.tabs.get(tabId), url = tab.pendingUrl || tab.url;
   const domain = domainOf(url);
   if (!domain || tab.pinned) throw new Error('固定标签页和浏览器内部页面不能加入标签组。');
-  if ((request.expectedUrl && new URL(request.expectedUrl).href !== new URL(url).href) || (request.expectedDomain && request.expectedDomain !== domain)) throw new Error('当前网页已跳转，请重新打开助手后操作。');
+  if ((request.expectedUrl && new URL(request.expectedUrl).href !== new URL(url).href) || (request.expectedDomain && request.expectedDomain !== domain)) throw new Error('当前网页已跳转，请重新打开弹窗后操作。');
   const scope = request.ruleScope || 'domain';
   if (request.remember) ruleTarget(url, scope);
   let label, destination;
@@ -78,7 +78,7 @@ export async function assignLabel(api, tabId, request, settings, rules, state) {
   const savedRule = remembered ? setRule(updatedRules, url, scope, label) : null;
   const effective = remembered ? labelFor(url, updatedRules) : label;
   const fresh = await api.tabs.get(tabId);
-  if (fresh.pinned || fresh.windowId !== tab.windowId || new URL(fresh.pendingUrl || fresh.url).href !== new URL(url).href) throw new Error('标签页状态已变化，请重新打开助手后操作。');
+  if (fresh.pinned || fresh.windowId !== tab.windowId || new URL(fresh.pendingUrl || fresh.url).href !== new URL(url).href) throw new Error('标签页状态已变化，请重新打开弹窗后操作。');
   let result;
   if (destination && effective.title === label.title) {
     await api.tabs.group({ tabIds: [tabId], groupId: destination.id });

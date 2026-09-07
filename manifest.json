@@ -1,31 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Tab Grove · 网页整理",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "按网站域名整理 Chrome 标签页，搜索网页、查找重复网址，一键创建标签组。所有数据仅保存在本机。",
   "minimum_chrome_version": "120",
   "permissions": [
     "tabs",
     "tabGroups",
-    "storage",
-    "scripting"
-  ],
-  "host_permissions": [
-    "http://*/*",
-    "https://*/*"
-  ],
-  "content_scripts": [
-    {
-      "matches": [
-        "http://*/*",
-        "https://*/*"
-      ],
-      "js": [
-        "pet.js"
-      ],
-      "run_at": "document_idle",
-      "all_frames": false
-    }
+    "storage"
   ],
   "background": {
     "service_worker": "background.js",

@@ -81,7 +81,7 @@ function render() {
   $('domain-count').textContent = groups.length;
   $('scope').value = settings.scope; $('sort').value = settings.sort;
   $('collapse-groups').checked = settings.collapse;
-  $('auto-group').checked = settings.autoGroup; $('pet-enabled').checked = settings.petEnabled;
+  $('auto-group').checked = settings.autoGroup;
   $('auto-badge').textContent = settings.autoGroup ? '● 新网页自动归组' : '○ 自动归组已关闭';
   renderRules();
   document.querySelectorAll('[data-view]').forEach(node => { const active = node.dataset.view === view && !chosenDomain; node.classList.toggle('active', active); node.setAttribute('aria-current', active ? 'page' : 'false'); });
@@ -193,7 +193,6 @@ $('search').oninput = event => { search = event.target.value.trim().toLowerCase(
 $('scope').onchange = event => { settings.scope = event.target.value; saveSettings(); };
 $('sort').onchange = event => { settings.sort = event.target.value; saveSettings(); };
 $('auto-group').onchange = event => { settings.autoGroup = event.target.checked; saveSettings(); };
-$('pet-enabled').onchange = event => { settings.petEnabled = event.target.checked; saveSettings(); };
 $('collapse-groups').onchange = event => { settings.collapse = event.target.checked; saveSettings(); };
 $('settings-button').onclick = () => $('settings-dialog').showModal();
 $('install-help').onclick = () => $('help-dialog').showModal();
@@ -244,7 +243,7 @@ function renderRules() {
     });
     actions.append(edit, remove); row.append(copy, actions); return row;
   }));
-  if (!ruleEntries(siteRules).length) $('saved-rules').append(el('p', 'rules-empty', '还没有分组规则。在网页列表勾选网页，点击「设置分组规则」，或通过悬浮小助手创建。'));
+  if (!ruleEntries(siteRules).length) $('saved-rules').append(el('p', 'rules-empty', '还没有分组规则。在网页列表勾选网页，点击「设置分组规则」，或在插件弹窗中创建。'));
 }
 function updateSelection() {
   $('selection-count').textContent = selected.size ? '已选 ' + selected.size + ' 个网页' : '勾选网页，设置分组规则';

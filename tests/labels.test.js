@@ -13,7 +13,7 @@ function fixture(initial = [], initialGroups = []) {
   const api = {
     tabs: {
       get: async id => ({ ...get(id) }),
-      query: async q => tabs.filter(t => q.windowId === undefined || t.windowId === q.windowId).map(t => ({ ...t })),
+      query: async q => tabs.filter(t => (q.windowId === undefined || t.windowId === q.windowId) && (q.active === undefined || !!t.active === q.active)).map(t => ({ ...t })),
       move: async id => { moves.push(id); const t = get(id); t.index = tabs.length; },
       group: async options => {
         joins.push(options);
@@ -153,8 +153,8 @@ test('active tab joining an existing collapsed label expands it', async () => {
   await autoGroupTab(f.api, 2, defaults); assert.equal(f.groups[0].collapsed, false);
 });
 
-test('background serializes simultaneous new-tab events and routes pet requests to sender tab', async () => {
-  const f = fixture([{ id: 1, url: 'https://www.bilibili.com' }, { id: 2, url: 'https://search.bilibili.com' }]);
+test('background serializes events and applies popup rules only to the active tab', async () => {
+  const f = fixture([{ id: 1, url: 'https://www.bilibili.com' }, { id: 2, url: 'https://search.bilibili.com', active: true }]);
   const event = () => ({ listeners: [], addListener(fn) { this.listeners.push(fn); } });
   for (const name of ['onCreated', 'onUpdated', 'onAttached', 'onRemoved', 'onReplaced']) f.api.tabs[name] = event();
   const session = {}, local = {};
@@ -167,12 +167,14 @@ test('background serializes simultaneous new-tab events and routes pet requests 
   try {
     await import('../background.js');
     f.api.tabs.onCreated.listeners[0]({ id: 1 }); f.api.tabs.onCreated.listeners[0]({ id: 2 });
-    const sender = { id: 'unit-test', frameId: 0, tab: { id: 2, windowId: 1 }, url: 'https://search.bilibili.com/' };
+    const sender = { id: 'unit-test', url: 'chrome-extension://unit-test/popup.html' };
     const send = message => new Promise(resolve => f.api.runtime.onMessage.listeners[0](message, sender, resolve));
-    const context = await send({ type: 'pet-context' });
-    assert.equal(f.groups.length, 1); assert.equal(context.siteName, 'BILIBILI');
+    const context = (await send({ type: 'popup-context', windowId: 1 })).page;
+    assert.equal(f.groups.length, 1); assert.equal(context.domain, 'bilibili.com'); assert.equal(context.tabId, 2);
     assert.equal(context.groups[0].title, 'BILIBILI');
-    const result = await send({ type: 'pet-assign', mode: 'create', title: '视频', remember: true, color: 'pink', tabId: 1 });
+    const wrongTab = await send({ type: 'popup-assign', mode: 'create', title: '不应创建', windowId: 1, tabId: 1 });
+    assert.ok(wrongTab.error);
+    const result = await send({ type: 'popup-assign', mode: 'create', title: '视频', ruleScope: 'domain', color: 'pink', tabId: 2, windowId: 1, expectedUrl: context.url });
     assert.equal(result.title, '视频'); assert.notEqual(f.tabs[0].groupId, f.tabs[1].groupId);
     assert.equal(local.siteRules['bilibili.com'].title, '视频'); assert.equal(session.assignments[2].manual, false);
     const popupSender = { id: 'unit-test', url: 'chrome-extension://unit-test/popup.html' };
@@ -203,7 +205,7 @@ test('background serializes simultaneous new-tab events and routes pet requests 
     assert.equal(f.groups.find(g => g.id === f.tabs[0].groupId).title, '新接口');
     assert.equal(f.groups.find(g => g.id === f.tabs[1].groupId).title, '接口');
     let answered = false;
-    f.api.runtime.onMessage.listeners[0]({ type: 'pet-assign' }, { ...sender, id: 'foreign-extension' }, () => { answered = true; });
+    f.api.runtime.onMessage.listeners[0]({ type: 'popup-assign' }, { ...sender, id: 'foreign-extension' }, () => { answered = true; });
     assert.equal(answered, false);
   } finally { globalThis.chrome = previousChrome; }
 });
@@ -229,7 +231,7 @@ test('saving a less specific rule preserves the more specific winning destinatio
   assert.equal(f.groups.length, 1);
 });
 
-test('exact page saves reject same-domain navigation since the pet context was read', async () => {
+test('exact page saves reject same-domain navigation since the popup context was read', async () => {
   const f = fixture([{ id: 1, url: 'https://x.com/changed' }]), rules = {};
   await assert.rejects(() => assignLabel(f.api, 1, { mode: 'create', title: '收藏', remember: true, ruleScope: 'page', expectedUrl: 'https://x.com/original' }, defaults, rules, {}));
   assert.deepEqual(rules, {}); assert.equal(f.joins.length, 0);

@@ -1,10 +1,10 @@
-import { defaults, domainOf, siteName } from './core.js';
+import { defaults, domainOf } from './core.js';
 import { organize } from './organizer.js';
-import { assignLabel, autoGroupTab, labelFor } from './labels.js';
+import { assignLabel, autoGroupTab } from './labels.js';
 import { openManager, popupContext } from './navigation.js';
-import { matchRule, ruleTarget, setRule, ruleEntries } from './rules.js';
+import { setRule, ruleEntries } from './rules.js';
 
-// Auto events, bulk operations and pet clicks share one mutation queue.
+// Auto events, bulk operations and popup assignments share one mutation queue.
 let queue = Promise.resolve();
 function enqueue(action) { const task = queue.then(action); queue = task.catch(() => {}); return task; }
 async function config() {
@@ -29,24 +29,15 @@ chrome.tabs.onAttached.addListener(id => { enqueue(async () => { const assignmen
 chrome.tabs.onRemoved.addListener(id => { enqueue(async () => { const assignments = await state(); delete assignments[id]; await chrome.storage.session.set({ assignments }); }).catch(console.error); });
 chrome.tabs.onReplaced.addListener((added, removed) => { enqueue(async () => { const assignments = await state(); if (assignments[removed]) assignments[added] = assignments[removed]; delete assignments[removed]; await chrome.storage.session.set({ assignments }); await auto(added); }).catch(console.error); });
 
-async function petContext(sender) {
-  const tab = await chrome.tabs.get(sender.tab.id);
-  const { settings, rules } = await config();
-  const domain = domainOf(tab.pendingUrl || tab.url);
-  const groups = await chrome.tabGroups.query({ windowId: tab.windowId });
-  const url = tab.pendingUrl || tab.url;
-  return { url, domain, siteName: siteName(domain), pinned: tab.pinned, groupId: tab.groupId, groups: groups.map(({ id, title, color }) => ({ id, title, color })), suggested: domain ? labelFor(url, rules).title : '', rule: matchRule(url, rules), targets: domain ? Object.fromEntries(['domain', 'host', 'page'].map(scope => [scope, ruleTarget(url, scope).target])) : {}, autoGroup: settings.autoGroup };
-}
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (sender.id !== chrome.runtime.id) return;
   const fromManager = sender.url?.startsWith(chrome.runtime.getURL(''));
   const fromPopup = sender.url === chrome.runtime.getURL('popup.html');
-  const fromPet = sender.tab && sender.frameId === 0 && domainOf(sender.url);
-  if (!fromManager && !fromPet) return;
+  if (!fromManager) return;
   enqueue(async () => {
     if (message.type === 'popup-context' && fromPopup) {
-      const { settings } = await config();
-      return popupContext(chrome, message.windowId, settings);
+      const { settings, rules } = await config();
+      return popupContext(chrome, message.windowId, settings, rules);
     }
     if (message.type === 'open-manager' && fromManager) { await openManager(chrome, message.windowId); return { ok: true }; }
     if (message.type === 'organize' && fromManager) {
@@ -58,15 +49,16 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       await chrome.storage.session.set({ assignments });
       return result;
     }
-    if (message.type === 'pet-context' && fromPet) return petContext(sender);
-    if (message.type === 'pet-assign' && fromPet) {
+    if (message.type === 'popup-assign' && fromPopup) {
+      if (!Number.isInteger(message.windowId) || !Number.isInteger(message.tabId)) throw new Error('无法确定当前网页，请重新打开弹窗。');
+      const [active] = await chrome.tabs.query({ windowId: message.windowId, active: true });
+      if (!active || active.id !== message.tabId || (await chrome.windows.get(active.windowId)).type !== 'normal') throw new Error('当前网页已切换，请确认后重试。');
       const { settings, rules } = await config(), assignments = await state();
-      const result = await assignLabel(chrome, sender.tab.id, message, settings, rules, assignments);
+      const result = await assignLabel(chrome, active.id, { ...message, remember: true }, settings, rules, assignments);
       await chrome.storage.session.set({ assignments });
       if (result.remembered) await chrome.storage.local.set({ siteRules: rules });
       return result;
     }
-    if (message.type === 'pet-open-manager' && fromPet) { await openManager(chrome, sender.tab.windowId); return { ok: true }; }
     if (message.type === 'save-rules' && fromManager) {
       if (!Array.isArray(message.tabs) || !message.tabs.length || !message.tabs.every(t => Number.isInteger(t.id) && typeof t.url === 'string')) throw new Error('请选择要设置规则的网页。');
       const { settings, rules } = await config(), keys = new Set(), ids = [];
@@ -93,15 +85,4 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     throw new Error('不支持的操作');
   }).then(reply, error => reply({ error: error.message }));
   return true;
-});
-
-async function injectPets() {
-  const { settings } = await config();
-  if (!settings.petEnabled) return;
-  const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
-  await Promise.allSettled(tabs.map(tab => chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['pet.js'] })));
-}
-chrome.runtime.onInstalled.addListener(() => { injectPets().catch(console.error); });
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.settings?.newValue?.petEnabled && !changes.settings.oldValue?.petEnabled) injectPets().catch(console.error);
 });

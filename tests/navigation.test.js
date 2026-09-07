@@ -14,7 +14,7 @@ function fixture() {
   const api = {
     runtime: { getURL: path => `chrome-extension://test/${path}` },
     tabs: {
-      query: async ({ windowId }) => tabs.filter(t => windowId === undefined || t.windowId === windowId),
+      query: async ({ windowId, active }) => tabs.filter(t => (windowId === undefined || t.windowId === windowId) && (active === undefined || !!t.active === active)),
       create: async props => { created.push(props); tabs.push({ id: 100, ...props }); },
       update: async (id, props) => focused.push({ id, ...props })
     },
@@ -61,4 +61,19 @@ test('all-window scope includes each normal window, excludes the manager and ski
   assert.equal(current.tabCount, 3); assert.equal(all.tabCount, 5);
   assert.equal(all.eligibleCount, 4); assert.equal(all.windowCount, 2);
   assert.deepEqual(new Set(all.ids), new Set([1, 2, 3, 5]));
+});
+
+
+test('popup current page uses the source window and preserves rule priority under all-window scope', async () => {
+  const f = fixture(), rules = { 'bilibili.com': { title: '视频' }, 'host:search.bilibili.com': { title: '搜索' }, 'page:https://search.bilibili.com/all': { title: '收藏' } };
+  const context = await popupContext(f.api, 1, { ...defaults, scope: 'all' }, rules);
+  assert.equal(context.page.tabId, 1); assert.equal(context.page.rule.title, '收藏');
+  assert.equal(context.page.targets.host, 'search.bilibili.com'); assert.equal(context.page.supported, true);
+  f.tabs[0].pinned = true;
+  assert.equal((await popupContext(f.api, 1)).page.supported, false);
+  f.tabs[0].pinned = false; f.tabs[0].url = 'chrome://settings';
+  const internal = (await popupContext(f.api, 1)).page;
+  assert.equal(internal.supported, false); assert.deepEqual(internal.targets, {});
+  const empty = await popupContext(f.api, 99);
+  assert.equal(empty.page.supported, false); assert.equal(empty.page.tabId, undefined);
 });

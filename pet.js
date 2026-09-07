@@ -1,8 +1,8 @@
 (() => {
   const live = !!globalThis.chrome?.runtime?.id;
   const demo = !live && document.documentElement.hasAttribute('data-tab-grove-pet-demo');
-  if ((!live && !demo) || (live && !/^https?:$/.test(location.protocol)) || window.top !== window || globalThis.__tabGrovePetVersion === '1.1.0') return;
-  globalThis.__tabGrovePetVersion = '1.1.0';
+  if ((!live && !demo) || (live && !/^https?:$/.test(location.protocol)) || window.top !== window || globalThis.__tabGrovePetVersion === '1.2.2') return;
+  globalThis.__tabGrovePetVersion = '1.2.2';
   const host = document.createElement('div');
   host.id = 'tab-grove-pet';
   document.getElementById(host.id)?.remove();
@@ -16,9 +16,9 @@
       .pet .eye{transform-origin:center;animation:blink 6s infinite}@keyframes blink{0%,44%,48%,100%{transform:scaleY(1)}46%{transform:scaleY(.1)}}@media(prefers-reduced-motion:reduce){.pet .eye{animation:none}}
       .panel{position:fixed;width:310px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow-y:auto;border:1px solid #dce5d7;border-radius:18px;background:#fcfdf9;color:#344c3c;box-shadow:0 14px 60px #193d3326;padding:19px;font:12px/1.6 "Segoe UI","Microsoft YaHei",sans-serif;text-align:left;letter-spacing:normal}
       .head{display:flex;align-items:center;gap:8px}.head strong{font-size:16px;font-weight:650}.head span{font-size:9px;color:#8c9b83;letter-spacing:1px}.close{margin-left:auto;background:none;border:0;font-size:23px;color:#83937c;padding:0 4px}
-      .intro{margin:7px 0 15px;color:#8b9883;font-size:11px}.site{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:11px 12px;border:1px solid #e3eadb;background:#f2f6ec;border-radius:9px}.site b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.site small{font-size:10px;color:#728669;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis}
-      .primary{width:100%;background:#38694b;color:#fff;border:0;border-radius:8px;padding:10px 12px;margin-top:12px;font-size:12px}.primary:hover{background:#2d583e}.divider{display:flex;align-items:center;gap:10px;font-size:10px;color:#99a18e;margin:17px 0 11px}.divider:after{content:"";height:1px;background:#e4eadc;flex:1}
-      .row{display:flex;gap:7px}select,input[type=text]{min-width:0;background:white;border:1px solid #dae3d3;border-radius:7px;color:#45613f;padding:9px 10px;width:100%;outline:none;font-size:12px}.row select,.row input{flex:1}.secondary{background:#edf2e5;color:#57714a;border:1px solid #dce5d1;border-radius:7px;padding:8px 12px;white-space:nowrap;font-size:11px}.secondary:hover{background:#e4ecdb}
+      .intro{margin:7px 0 15px;color:#8b9883;font-size:11px}
+      .divider{display:flex;align-items:center;gap:10px;font-size:10px;color:#99a18e;margin:17px 0 11px}.divider:after{content:"";height:1px;background:#e4eadc;flex:1}
+      .row{display:flex;gap:7px}select,input[type=text]{min-width:0;background:white;border:1px solid #dae3d3;border-radius:7px;color:#45613f;padding:9px 10px;width:100%;outline:none;font-size:12px}.row select,.row input{flex:1}.secondary{background:#38694b;color:#fff;border:1px solid #38694b;border-radius:7px;padding:8px 12px;white-space:nowrap;font-size:11px}.secondary:hover{background:#2d583e;border-color:#2d583e}
       label.remember{display:flex;align-items:flex-start;gap:6px;color:#86937d;margin-top:13px;font-size:10px;cursor:pointer}input[type=checkbox]{accent-color:#4f7943;margin:2px 0 0;width:13px;height:13px;flex-shrink:0}.colors{display:flex;gap:8px;margin-top:9px}.color{width:19px;height:19px;border:3px solid white;outline:1px solid #e5eadf;background:var(--color);border-radius:50%;padding:0}.color[aria-pressed=true]{outline:2px solid #678358}
       .status{font-size:11px;color:#607c50;line-height:1.7;white-space:pre-line;overflow-wrap:anywhere;margin:12px 0 0}.status.error{color:#ab594e}.foot{display:flex;align-items:center;justify-content:space-between;margin-top:15px;padding-top:12px;border-top:1px solid #e5eadf}.link{background:none;border:0;padding:0;color:#839476;font-size:10px}.link:hover{color:#315b38}.demo{font-size:10px;color:#a38b5c;margin:8px 0 0}
       button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #8ca781;outline-offset:3px}
@@ -29,8 +29,6 @@
     <section class="panel" id="panel" hidden role="dialog" aria-label="小叶网页整理助手">
       <div class="head"><strong>小叶</strong><span>TAB GROVE</span><button class="close" id="close" aria-label="收起小助手">×</button></div>
       <p class="intro">把眼前的网页，放进喜欢的 label。</p>
-      <div class="site"><b id="site-name">正在识别网站…</b><small id="current-label">读取中</small></div>
-      <button class="primary" id="quick">加入对应 label</button>
       <div class="divider">选择已有 label</div>
       <div class="row"><select id="labels" aria-label="当前窗口的 label"></select><button class="secondary" id="join">加入</button></div>
       <div class="divider">或者，新建一个</div>
@@ -76,15 +74,11 @@
   }
   function setBusy(value) {
     busy = value;
-    for (const id of ['quick', 'join', 'create', 'labels', 'new-label', 'remember']) $(id).disabled = value || !!context?.pinned;
+    for (const id of ['join', 'create', 'labels', 'new-label', 'remember']) $(id).disabled = value || !!context?.pinned;
     if (!value && !context?.groups.length) { $('join').disabled = true; $('labels').disabled = true; }
   }
   async function refresh() {
     context = await request({ type: 'pet-context' });
-    $('site-name').textContent = context.siteName || '暂不支持此页面';
-    $('site-name').title = context.domain || '';
-    $('current-label').textContent = context.groups.find(g => g.id === context.groupId)?.title || '尚未归组';
-    $('quick').textContent = `加入 ${context.suggested || '对应'} label`;
     const selected = $('labels').value;
     $('labels').replaceChildren(...context.groups.map(group => { const option = document.createElement('option'); option.value = group.id; option.textContent = group.title || '未命名标签组'; return option; }));
     if (context.groups.some(g => String(g.id) === selected)) $('labels').value = selected;
@@ -118,7 +112,7 @@
     } catch (error) { status(error.message, true); }
     finally { setBusy(false); layout(); }
   }
-  $('quick').onclick = () => assign('domain'); $('join').onclick = () => assign('existing');
+  $('join').onclick = () => assign('existing');
   $('create-form').onsubmit = event => { event.preventDefault(); assign('create'); };
   for (const [name, [hex, label]] of Object.entries(colors)) {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'color'; button.style.setProperty('--color', hex); button.title = label; button.setAttribute('aria-label', label); button.setAttribute('aria-pressed', String(name === color));
